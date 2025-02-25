@@ -86,19 +86,62 @@ namespace Business.Concretes
 
             return orderDictionary.Values.FirstOrDefault();
         }
+        public async Task<IEnumerable<OrderDTO>> GetTopCustomersLastWeekAsync()
+        {
+            using var connection = _context.CreateConnection();
+
+            var query = @"
+                SELECT o.customerid,
+                COUNT(o.id) AS ordercount
+                FROM orders o
+                WHERE o.orderdate >= NOW() - INTERVAL '7 days'
+                GROUP BY o.customerid
+                ORDER BY ordercount DESC
+                LIMIT 5";
+
+            // Veriyi al ve DTO'ya dönüştür
+            var result = await connection.QueryAsync<OrderDTO>(query);
+            return result;
+        }
+
+
+
+
 
         public async Task<int> AddAsync(OrderDTO orderDTO)
         {
             using var connection = _context.CreateConnection();
+
+            // 24 saat içinde müşteri için kaç sipariş olduğunu kontrol et
+            var orderCount = await connection.QuerySingleOrDefaultAsync<int>(
+                @"SELECT COUNT(*) 
+                  FROM orders 
+                  WHERE customerid = @CustomerId 
+                  AND orderdate >= @StartDate",
+                new
+                {
+                    CustomerId = orderDTO.CustomerId,
+                    StartDate = DateTime.Now.AddHours(-24) // Son 24 saat
+                });
+
+            // Eğer müşteri 24 saat içinde 3 sipariş verdiyse, yeni sipariş veremez
+            if (orderCount >= 3)
+            {
+                throw new InvalidOperationException("Bir müşteri 24 saat içinde yalnızca 3 sipariş verebilir.");
+            }
+
+            // Yeni siparişi oluştur
             var order = _mapper.Map<Order>(orderDTO);
             order.OrderDate = DateTime.Now;
 
+            // Siparişin id'sini al
             var orderId = await connection.ExecuteScalarAsync<int>(
                 "INSERT INTO orders (customerid, orderdate, totalamount, status) VALUES (@CustomerId, @OrderDate, @TotalAmount, @Status) RETURNING id",
                 order);
 
             decimal totalAmount = 0;
 
+            // Sipariş detaylarını işleme
             foreach (var detail in orderDTO.OrderDetails)
             {
                 var product = await connection.QuerySingleOrDefaultAsync<Product>(
@@ -115,10 +158,12 @@ namespace Business.Concretes
                 }
             }
 
+            // Toplam tutarı güncelle
             await connection.ExecuteAsync(
                 "UPDATE orders SET totalamount = @TotalAmount WHERE id = @OrderId",
                 new { TotalAmount = totalAmount, OrderId = orderId });
 
+            // Uygulanabilir kampanya kontrol et
             var applicableCampaign = await connection.QueryFirstOrDefaultAsync<Campaign>(
                 "SELECT * FROM campaigns WHERE minimumAmount <= @TotalAmount AND expirationDate >= @CurrentDate ORDER BY minimumAmount DESC LIMIT 1",
                 new { TotalAmount = totalAmount, CurrentDate = DateTime.Now });

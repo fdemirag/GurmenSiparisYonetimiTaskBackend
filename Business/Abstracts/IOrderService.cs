@@ -14,5 +14,6 @@ namespace Business.Abstracts
         Task<int> AddAsync(OrderDTO orderDTO);
         Task<int> UpdateAsync(int id, OrderDTO orderDTO);
         Task<int> DeleteAsync(int id);
+        Task<IEnumerable<OrderDTO>> GetTopCustomersLastWeekAsync();
     }
 }

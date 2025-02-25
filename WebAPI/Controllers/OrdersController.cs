@@ -44,4 +44,12 @@ public class OrdersController : ControllerBase
         await _orderService.DeleteAsync(id);
         return NoContent();
     }
+
+    // Yeni endpoint - Son bir hafta içinde en çok sipariş veren 5 müşteri
+    [HttpGet("top-customers-last-week")]
+    public async Task<ActionResult<IEnumerable<OrderDTO>>> GetTopCustomersLastWeek()
+    {
+        var result = await _orderService.GetTopCustomersLastWeekAsync();
+        return Ok(result);
+    }
 }
