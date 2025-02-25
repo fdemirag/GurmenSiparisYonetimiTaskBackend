@@ -120,16 +120,11 @@ namespace Business.Concretes
                 new { TotalAmount = totalAmount, OrderId = orderId });
 
             var applicableCampaign = await connection.QueryFirstOrDefaultAsync<Campaign>(
-                "SELECT * FROM campaigns WHERE minimumAmount <= @TotalAmount ORDER BY minimumAmount DESC LIMIT 1",
-                new { TotalAmount = totalAmount });
+                "SELECT * FROM campaigns WHERE minimumAmount <= @TotalAmount AND expirationDate >= @CurrentDate ORDER BY minimumAmount DESC LIMIT 1",
+                new { TotalAmount = totalAmount, CurrentDate = DateTime.Now });
 
             if (applicableCampaign != null)
             {
-                if (applicableCampaign.ExpirationDate < DateTime.Now)
-                {
-                    throw new Exception("Kuponun süresi doldu. Bu kampanya artık geçerli değil.");
-                }
-
                 decimal discountedAmount = totalAmount * (1 - applicableCampaign.DiscountRate);
                 await connection.ExecuteAsync(
                     "UPDATE orders SET totalamount = @TotalAmount, discountcode = @DiscountCode WHERE id = @OrderId",

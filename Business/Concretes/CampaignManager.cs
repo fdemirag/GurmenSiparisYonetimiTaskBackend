@@ -23,7 +23,7 @@ public class CampaignManager : ICampaignService
     public async Task<IEnumerable<CampaignDTO>> GetAllAsync()
     {
         using var connection = _context.CreateConnection();
-        var sql = "SELECT * FROM campaigns";
+        var sql = "SELECT * FROM campaigns WHERE expirationDate > NOW()";
         var campaigns = await connection.QueryAsync<Campaign>(sql);
         return _mapper.Map<IEnumerable<CampaignDTO>>(campaigns);
     }
