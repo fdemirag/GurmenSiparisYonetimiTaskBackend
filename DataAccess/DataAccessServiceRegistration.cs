@@ -14,17 +14,7 @@ namespace DataAccess
 
             services.AddScoped<DapperContext>();  // DapperContext servisini ekliyoruz
 
-            //// Autofac ile DI container'ı entegre etmek için
-            //var builder = new ContainerBuilder();
-
-            //// "Repository" ile biten tüm sınıfları ekle
-            //builder.RegisterAssemblyTypes(Assembly.GetExecutingAssembly())
-            //       .Where(x => x.Name.EndsWith("Repository"))
-            //       .AsImplementedInterfaces()
-            //       .InstancePerLifetimeScope();
-
-            //// Autofac'in servisleri kullanabilmesi için IServiceCollection'a ekle
-            //builder.Populate(services);
+          
 
             return services;
         }
