@@ -1,5 +1,6 @@
 ﻿using AutoMapper;
 using Business.Abstracts;
+using Business.BusinessRules;
 using Business.DTOs.Order;
 using Business.DTOs.OrderDetail;
 using Dapper;
@@ -13,14 +14,17 @@ namespace Business.Concretes
         private readonly DapperContext _context;
         private readonly IMapper _mapper;
         private readonly ICampaignService _campaignService;
+        private readonly OrderBusinessRules _orderBusinessRules;
 
-        public OrderManager(DapperContext context, IMapper mapper, ICampaignService campaignService)
+        public OrderManager(DapperContext context, IMapper mapper, ICampaignService campaignService, OrderBusinessRules orderBusinessRules)
         {
             _context = context;
             _mapper = mapper;
             _campaignService = campaignService;
+            _orderBusinessRules = orderBusinessRules;
         }
 
+        // Tüm siparişleri getir
         public async Task<IEnumerable<OrderDTO>> GetAllAsync()
         {
             using var connection = _context.CreateConnection();
@@ -53,6 +57,7 @@ namespace Business.Concretes
             return orderDictionary.Values;
         }
 
+        // ID ile sipariş getir
         public async Task<OrderDTO?> GetByIdAsync(int id)
         {
             using var connection = _context.CreateConnection();
@@ -86,6 +91,8 @@ namespace Business.Concretes
 
             return orderDictionary.Values.FirstOrDefault();
         }
+
+        // Son bir hafta içinde en çok sipariş veren 5 müşteriyi getir
         public async Task<IEnumerable<OrderDTO>> GetTopCustomersLastWeekAsync()
         {
             using var connection = _context.CreateConnection();
@@ -104,44 +111,25 @@ namespace Business.Concretes
             return result;
         }
 
-
-
-
-
+        // Yeni sipariş ekle
         public async Task<int> AddAsync(OrderDTO orderDTO)
         {
             using var connection = _context.CreateConnection();
 
-            // 24 saat içinde müşteri için kaç sipariş olduğunu kontrol et
-            var orderCount = await connection.QuerySingleOrDefaultAsync<int>(
-                @"SELECT COUNT(*) 
-                  FROM orders 
-                  WHERE customerid = @CustomerId 
-                  AND orderdate >= @StartDate",
-                new
-                {
-                    CustomerId = orderDTO.CustomerId,
-                    StartDate = DateTime.Now.AddHours(-24) // Son 24 saat
-                });
+            // Müşteri için son 24 saat içinde kaç sipariş verdiğini kontrol et
+            await _orderBusinessRules.ValidateOrderLimitAsync(orderDTO.CustomerId);
 
-            // Eğer müşteri 24 saat içinde 3 sipariş verdiyse, yeni sipariş veremez
-            if (orderCount >= 3)
-            {
-                throw new InvalidOperationException("Bir müşteri 24 saat içinde yalnızca 3 sipariş verebilir.");
-            }
-
-            // Yeni siparişi oluştur
+            // Yeni siparişi oluştur ve ID'sini al
             var order = _mapper.Map<Order>(orderDTO);
             order.OrderDate = DateTime.Now;
 
-            // Siparişin id'sini al
             var orderId = await connection.ExecuteScalarAsync<int>(
                 "INSERT INTO orders (customerid, orderdate, totalamount, status) VALUES (@CustomerId, @OrderDate, @TotalAmount, @Status) RETURNING id",
                 order);
 
             decimal totalAmount = 0;
 
-            // Sipariş detaylarını işleme
+            // Sipariş detaylarını işle
             foreach (var detail in orderDTO.OrderDetails)
             {
                 var product = await connection.QuerySingleOrDefaultAsync<Product>(
@@ -163,7 +151,7 @@ namespace Business.Concretes
                 "UPDATE orders SET totalamount = @TotalAmount WHERE id = @OrderId",
                 new { TotalAmount = totalAmount, OrderId = orderId });
 
-            // Uygulanabilir kampanya kontrol et
+            // Uygulanabilir kampanya kontrol et ve indirim uygula
             var applicableCampaign = await connection.QueryFirstOrDefaultAsync<Campaign>(
                 "SELECT * FROM campaigns WHERE minimumAmount <= @TotalAmount AND expirationDate >= @CurrentDate ORDER BY minimumAmount DESC LIMIT 1",
                 new { TotalAmount = totalAmount, CurrentDate = DateTime.Now });
@@ -179,6 +167,7 @@ namespace Business.Concretes
             return orderId;
         }
 
+        // Sipariş güncelle
         public async Task<int> UpdateAsync(int id, OrderDTO orderDTO)
         {
             using var connection = _context.CreateConnection();
@@ -190,6 +179,7 @@ namespace Business.Concretes
                 order);
         }
 
+        // Sipariş sil
         public async Task<int> DeleteAsync(int id)
         {
             using var connection = _context.CreateConnection();
