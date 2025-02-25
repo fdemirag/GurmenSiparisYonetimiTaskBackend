@@ -63,12 +63,16 @@ namespace Business.Concretes
             using var connection = _context.CreateConnection();
             var orderDictionary = new Dictionary<int, OrderDTO>();
 
+            var query = @"
+        SELECT 
+            o.id, o.customerid, o.orderdate, o.totalamount, o.status, o.discountcode,
+            od.id AS OrderDetailId, od.orderid, od.productid, od.quantity, od.unitprice
+        FROM orders o
+        LEFT JOIN orderdetails od ON o.id = od.orderid
+        WHERE o.id = @Id";
+
             var orderWithDetails = await connection.QueryAsync<OrderDTO, OrderDetailDTO, OrderDTO>(
-                @"SELECT o.id, o.customerid, o.orderdate, o.totalamount, o.status, o.discountcode,
-                         od.id, od.orderid, od.productid, od.quantity, od.unitprice
-                  FROM orders o
-                  LEFT JOIN orderdetails od ON o.id = od.orderid
-                  WHERE o.id = @Id",
+                query,
                 (order, orderDetail) =>
                 {
                     if (!orderDictionary.TryGetValue(order.Id, out var orderEntry))
@@ -78,7 +82,8 @@ namespace Business.Concretes
                         orderDictionary.Add(order.Id, orderEntry);
                     }
 
-                    if (orderDetail != null)
+                    // Eğer orderDetail null değilse listeye ekle
+                    if (orderDetail?.OrderId != null)
                     {
                         orderEntry.OrderDetails.Add(orderDetail);
                     }
@@ -86,11 +91,12 @@ namespace Business.Concretes
                     return orderEntry;
                 },
                 new { Id = id },
-                splitOn: "id"
+                splitOn: "OrderDetailId" // Burada doğru ID'yi ayarlamak önemli
             );
 
             return orderDictionary.Values.FirstOrDefault();
         }
+
 
         // Son bir hafta içinde en çok sipariş veren 5 müşteriyi getir
         public async Task<IEnumerable<OrderDTO>> GetTopCustomersLastWeekAsync()
